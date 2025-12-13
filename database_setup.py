@@ -1,31 +1,30 @@
 import sqlite3
 import random
 from datetime import datetime
+from faker import Faker
 
-# Nom de la base de données
+# Configuration
+fake = Faker('fr_FR') 
 DB_NAME = "marketing.db"
 
 def create_tables():
-    """
-    Crée l'architecture (Schema) demandée dans le PDF[cite: 72, 84].
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    print("--- 1. Création des tables SQL ---")
+    print("--- 1. Architecture de la base de données ---")
 
-    # Table SESSIONS (Visites)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS sessions (
         session_id VARCHAR(50) PRIMARY KEY,
         user_id VARCHAR(50),
-        start_time TIMESTAMP,
+        ip_address VARCHAR(20),
+        country VARCHAR(50),
+        start_time TEXT,
         pages_viewed INT,
         converted BOOLEAN,
         channel VARCHAR(50)
     )
     ''')
 
-    # Table EVENTS (Achats)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS events (
         event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,44 +35,71 @@ def create_tables():
     )
     ''')
     conn.commit()
-    print("Tables 'sessions' et 'events' prêtes.")
+    print("Tables créées.")
 
-def generate_fake_data(n=200):
-    """
-    Simule des données pour remplir la base (ETL).
-    """
+def generate_pro_data(n=2000):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    print(f"--- 2. Génération de {n} visites simulées ---")
+    
+    # Nettoyage
+    cursor.execute("DELETE FROM sessions")
+    cursor.execute("DELETE FROM events")
+    
+    print(f"--- 2. Génération de {n} logs (Logique RENFORCÉE pour ML) ---")
     
     channels = ['organic', 'paid', 'email', 'social']
     
-    for i in range(n):
-        user_id = f"user_{i}"
-        session_id = f"sess_{random.randint(10000,99999)}"
-        channel = random.choice(channels)
-        pages = random.randint(1, 12)
+    for _ in range(n):
+        # --- PARTIE FAKER ---
+        user_uuid = fake.uuid4()[:8]
+        ip = fake.ipv4()
+        country = fake.country()
+        session_id = f"sess_{fake.uuid4()}"
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # 20% de chance d'acheter
-        converted = 1 if random.random() < 0.2 else 0 
+        # --- PARTIE LOGIQUE RENFORCÉE ---
+        # On force des profils très typés
         
-        # Insertion dans SESSIONS
+        # 1. Choix du profil
+        profil_type = random.choices(['touriste', 'client_serieux'], weights=[70, 30], k=1)[0]
+        
+        if profil_type == 'client_serieux':
+            # Le client sérieux vient par Email ou Organic, regarde beaucoup de pages
+            channel = random.choice(['email', 'organic'])
+            pages = random.randint(10, 25) # Beaucoup de pages
+            converted = 1 # Il achète presque tout le temps
+            
+            # Petite part d'aléatoire (10% de chance qu'il n'achète pas quand même)
+            if random.random() < 0.1: converted = 0
+
+        else: # C'est un 'touriste'
+            # Le touriste vient des réseaux sociaux, regarde peu de pages
+            channel = random.choice(['social', 'paid'])
+            pages = random.randint(1, 8) # Peu de pages
+            converted = 0 # Il n'achète presque jamais
+            
+            # Petite part d'aléatoire (5% de chance qu'il achète sur un coup de tête)
+            if random.random() < 0.05: converted = 1
+        
+        # Insertion SESSIONS
         cursor.execute('''
-            INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)
-        ''', (session_id, user_id, datetime.now(), pages, converted, channel))
+            INSERT INTO sessions (session_id, user_id, ip_address, country, start_time, pages_viewed, converted, channel)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (session_id, user_uuid, ip, country, current_time, pages, converted, channel))
         
-        # Si achat, insertion dans EVENTS
+        # Insertion EVENTS
         if converted:
-            revenue = random.randint(20, 200)
+            base_rev = random.randint(30, 100)
+            revenue = base_rev + (pages * 2)
             cursor.execute('''
                 INSERT INTO events (user_id, event_type, revenue, channel)
                 VALUES (?, 'purchase', ?, ?)
-            ''', (user_id, revenue, channel))
+            ''', (user_uuid, revenue, channel))
             
     conn.commit()
     conn.close()
-    print("Données insérées avec succès dans marketing.db !")
+    print(f"✅ Terminé ! {n} lignes avec des profils très marqués (Facile pour l'IA).")
 
 if __name__ == "__main__":
     create_tables()
-    generate_fake_data()
+    generate_pro_data(n=2000)
